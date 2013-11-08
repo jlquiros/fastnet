@@ -83,6 +83,28 @@ class DataProvider(object):
   def data_dim(self):
     return self.inner_size ** 2 * 3
 
+  def _trim_borders(self, images, target):
+    if self.multiview:
+      start_positions = [(0, 0), (0, self.border_size * 2), (self.border_size, self.border_size),
+                         (self.border_size *2 , 0), (self.border_size * 2 , self.border_size * 2)]
+      end_positions = [(x + self.inner_size, y + self.inner_size) for (x, y) in start_positions]
+      for i in xrange(self.num_view / 2):
+        startY , startX = start_positions[i][0], start_positions[i][1]
+        endY, endX = end_positions[i][0], end_positions[i][1]
+        num_image = len(images)
+        for idx, img in enumerate(images):
+          pic = img[:, startY:endY, startX:endX]
+          target[:, i * num_image + idx] = pic.reshape((self.data_dim, ))
+          target[:, (self.num_view/2 +i) * num_image + idx] = pic[:, :, ::-1].reshape((self.data_dim, ))
+    else:
+      for idx, img in enumerate(images):
+        startY, startX = np.random.randint(0, self.border_size * 2 + 1), np.random.randint(0, self.border_size * 2 + 1)
+        endY, endX = startY + self.inner_size, startX + self.inner_size
+        pic = img[:, startY:endY, startX:endX]
+        if np.random.randint(2) == 0:  # also flip the image with 50% probability
+          pic = pic[:, :, ::-1]
+        target[:, idx] = pic.reshape((self.data_dim,))
+
 
 def _prepare_images(data_dir, category_range, batch_range, batch_meta):
   assert os.path.exists(data_dir), data_dir
@@ -158,28 +180,6 @@ class ImageNetDataProvider(DataProvider):
   def _handle_new_epoch(self):
     self._shuffle_batches()
 
-  def __trim_borders(self, images, target):
-    if self.multiview:
-      start_positions = [(0, 0), (0, self.border_size * 2), (self.border_size, self.border_size),
-                          (self.border_size *2 , 0), (self.border_size * 2 , self.border_size * 2)]
-      end_positions = [(x + self.inner_size, y + self.inner_size) for (x, y) in start_positions]
-      for i in xrange(self.num_view / 2):
-        startY , startX = start_positions[i][0], start_positions[i][1]
-        endY, endX = end_positions[i][0], end_positions[i][1]
-        num_image = len(images)
-        for idx, img in enumerate(images):
-          pic = img[:, startY:endY, startX:endX]
-          target[:, i * num_image + idx] = pic.reshape((self.data_dim, ))
-          target[:, (self.num_view/2 +i) * num_image + idx] = pic[:, :, ::-1].reshape((self.data_dim, ))
-    else:
-      for idx, img in enumerate(images):
-        startY, startX = np.random.randint(0, self.border_size * 2 + 1), np.random.randint(0, self.border_size * 2 + 1)
-        endY, endX = startY + self.inner_size, startX + self.inner_size
-        pic = img[:, startY:endY, startX:endX]
-        if np.random.randint(2) == 0:  # also flip the image with 50% probability
-          pic = pic[:, :, ::-1]
-        target[:, idx] = pic.reshape((self.data_dim,))
-
   def get_next_batch(self):
     self.get_next_index()
 
@@ -200,7 +200,7 @@ class ImageNetDataProvider(DataProvider):
       img = np.asarray(jpeg, np.uint8).transpose(2, 0, 1)
       images.append(img)
 
-    self.__trim_borders(images, cropped)
+    self._trim_borders(images, cropped)
     #if self.test:
     #  np.set_printoptions(threshold = np.nan)
     #  print cropped[:, 0]
@@ -253,6 +253,28 @@ class CifarDataProvider(DataProvider):
   def get_batch_indexes(self):
     names = self.get_batch_filenames()
     return sorted(list(set(int(DataProvider.BATCH_REGEX.match(n).group(1)) for n in names)))
+
+class CroppedCifarDataProvider(CifarDataProvider):
+  inner_size = 24
+  img_size = 32
+  border_size = 4
+  multiview = False
+
+  def get_next_batch(self):
+    self.get_next_index()
+    filename = os.path.join(self.data_dir, 'data_batch_%d' % self.curr_batch)
+
+    data = util.load(filename)
+    img = data['data'] - self.batch_meta['data_mean']
+    img = img.reshape((3, 32, 32, len(data['labels'])))
+    img = img.transpose(3, 0, 2, 1)
+    cropped = np.ndarray((self.data_dim, len(data['labels'])), dtype=np.float32)
+
+    self._trim_borders(img, cropped)
+
+    return BatchData(np.require(cropped, requirements='C', dtype=np.float32),
+                     np.array(data['labels']),
+                     self.curr_epoch)
 
 
 class IntermediateDataProvider(DataProvider):
@@ -388,7 +410,6 @@ class ParallelDataProvider(DataProvider):
     gpu_labels = self._gpu_batch.labels
     if self.multiview:
       batch_size = self.dp.batch_size * self.num_view
-      print 'The batch size is', batch_size
     if self.index + batch_size >=  width:
       width = width - self.index
       labels = gpu_labels[self.index/self.num_view:(self.index + batch_size) / self.num_view]
@@ -403,7 +424,7 @@ class ParallelDataProvider(DataProvider):
       data = gpuarray.zeros((height, batch_size), dtype = np.float32)
       gpu_partial_copy_to(gpu_data, data, 0, height, self.index, self.index + batch_size)
       self.index += batch_size
-    print 'The batch size is', batch_size
+    util.log_debug('The batch size is %s', batch_size)
     return BatchData(data, labels, self._gpu_batch.epoch)
 
 
@@ -427,6 +448,7 @@ def get_by_name(name):
 
 
 register_data_provider('cifar10', CifarDataProvider)
+register_data_provider('cropped-cifar10', CroppedCifarDataProvider)
 register_data_provider('imagenet', ImageNetDataProvider)
 register_data_provider('intermediate', IntermediateDataProvider)
 register_data_provider('memory', MemoryDataProvider)

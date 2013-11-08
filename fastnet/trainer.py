@@ -51,6 +51,7 @@ class Trainer:
     self.net = net
     self.curr_batch = self.curr_epoch = 0
     self.annealing_factor = 10
+    self.multiview = 0
     self.start_time = time.time()
 
     for k, v in kw.iteritems():
@@ -161,7 +162,7 @@ class Trainer:
     start_epoch = self.curr_epoch
     last_print_time = time.time()
 
-    while (self.curr_epoch - start_epoch <= num_epochs and 
+    while (self.curr_epoch - start_epoch < num_epochs and 
           self.should_continue_training()):
       batch_start = time.time()
       train_data = self.train_dp.get_next_batch(self.batch_size)
@@ -221,6 +222,10 @@ class Trainer:
 class MiniBatchTrainer(Trainer):
   def _finish_init(self):
     self.num_epoch = 100000
+
+  def train(self, num_epochs):
+    self.curr_batch = 0
+    Trainer.train(self, num_epochs)
 
   def should_continue_training(self):
     return self.curr_batch < self.num_batch

@@ -12,6 +12,7 @@ WARN = 2
 ERROR = 3
 FATAL = 4
 
+log_level = INFO
 level_to_char = { DEBUG : 'D',
                   INFO : 'I',
                   WARN : 'W',
@@ -23,6 +24,9 @@ program_start = time.time()
 log_mutex = threading.Lock()
 def log(msg, *args, **kw):
   level = kw.get('level', INFO)
+  if level < log_level:
+    return
+
   with log_mutex:
     caller = sys._getframe(kw.get('caller_frame', 1))
     filename = caller.f_code.co_filename

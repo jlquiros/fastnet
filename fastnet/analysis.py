@@ -4,6 +4,8 @@
 
 from fastnet import util
 from matplotlib.pyplot import gcf
+from math import sqrt
+import anydbm
 import cPickle
 import matplotlib.pyplot as plt
 import numpy as np
@@ -175,7 +177,7 @@ def load_layer(f, layer_id=1):
   try:
     sf = shelve.open(cp, flag='r')
     layer = sf['layers'][layer_id]
-  except:
+  except anydbm.error:
     zf = zipfile.ZipFile(cp)
     layer = cPickle.loads(zf.read('layers'))[layer_id]
   
@@ -209,11 +211,14 @@ def diff_files(a, b):
   
   ax = fig.add_subplot(111)
   diff = np.abs(f_a - f_b)
+  print sqrt((diff ** 2).sum())
+
   #diff = diff - diff.min()
   #diff = diff / diff.max()
   #big_pic = build_image(diff)
   #print diff[0, :, :, 0]
   #print f_a[0, :, :, 0]
   #print f_b[0, :, :, 0]
-  diff = diff / max(np.max(f_a), np.max(f_b))
+  #diff = diff / max(np.max(f_a), np.max(f_b))
   ax.imshow(build_image(diff))
+  return diff

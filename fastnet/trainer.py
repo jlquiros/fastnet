@@ -56,6 +56,9 @@ class Trainer:
     for k, v in kw.iteritems():
       setattr(self, k, v)
 
+    if not hasattr(self, 'multiview'):
+      self.multiview = False
+
 
     checkpoint = self.checkpoint_dumper.get_checkpoint()
     if checkpoint:

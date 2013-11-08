@@ -6,7 +6,7 @@ test_id = 'cifar-test-1'
 
 data_dir = '/ssd/nn-data/cifar-10.old/'
 checkpoint_dir = './checkpoint/'
-param_file = 'config/cifar-10-26pct.cfg'
+param_file = '../config/cifar-11pct.cfg'
 
 train_range = range(1, 41) #1,2,3,....,40
 test_range = range(41, 49) #41, 42, ..., 48
@@ -26,7 +26,7 @@ save_freq = 100
 test_freq = 100
 adjust_freq = 100
 factor = 1
-num_epoch = 15
+num_epoch = 30
 learning_rate = 1.0
 batch_size = 128
 image_color = 3

@@ -1,7 +1,7 @@
 from fastnet import net, util
 from fastnet.layer import ConvLayer, MaxPoolLayer, AvgPoolLayer, \
   CrossMapResponseNormLayer, SoftmaxLayer, NeuronLayer, ResponseNormLayer, FCLayer, \
-  DataLayer
+  DataLayer, LocalUnsharedLayer
 import fastnet
 from fastnet.util import isfloat
 import numpy as np
@@ -77,6 +77,7 @@ class Builder(object):
     elif ld['type'] == 'softmax': return self.softmax_layer(ld)
     elif ld['type'] == 'rnorm': return self.rnorm_layer(ld)
     elif ld['type'] == 'cmrnorm': return self.crm_layer(ld)
+    elif ld['type'] == 'local': return self.local_layer(ld)
     else:
       return None
       #raise Exception, 'Unknown layer %s' % ld['type']
@@ -96,8 +97,8 @@ class FastNetBuilder(Builder):
       epsB = 0.002
     momW = Builder.set_val(ld, 'momW', 0.0)
     momB = Builder.set_val(ld, 'momB', 0.0)
-    sharedBiases = Builder.set_val(ld, 'sharedBiases', default = 1)
-    partialSum = Builder.set_val(ld, 'partialSum', default = 0)
+    #sharedBiases = Builder.set_val(ld, 'sharedBiases', default = 1)
+    #partialSum = Builder.set_val(ld, 'partialSum', default = 0)
     wc = Builder.set_val(ld, 'wc', 0.0)
     bias = Builder.set_val(ld, 'bias')
     weight = Builder.set_val(ld, 'weight')
@@ -106,7 +107,31 @@ class FastNetBuilder(Builder):
     name = Builder.set_val(ld, 'name')
     disable_bprop = Builder.set_val(ld, 'disable_bprop', default = False)
     cv = ConvLayer(name, numFilter, (filterSize, filterSize), padding, stride, initW, initB,
-        partialSum,sharedBiases, epsW, epsB, momW, momB, wc, bias, weight,
+        epsW, epsB, momW, momB, wc, bias, weight,
+        weightIncr = weightIncr, biasIncr = biasIncr, disable_bprop = disable_bprop)
+    return cv
+
+  def local_layer(self, ld):
+    numFilter = Builder.set_val(ld, 'numFilter')
+    filterSize = Builder.set_val(ld, 'filterSize')
+    padding = Builder.set_val(ld, 'padding')
+    stride = Builder.set_val(ld, 'stride')
+    initW = Builder.set_val(ld, 'initW', 0.01)
+    initB = Builder.set_val(ld, 'initB', 0.00)
+    epsW = Builder.set_val(ld, 'epsW', 0.001)
+    epsB = Builder.set_val(ld, 'epsB', 0.002)
+    momW = Builder.set_val(ld, 'momW', 0.0)
+    momB = Builder.set_val(ld, 'momB', 0.0)
+    #sharedBiases = Builder.set_val(ld, 'sharedBiases', default = 1)
+    #partialSum = Builder.set_val(ld, 'partialSum', default = 0)
+    wc = Builder.set_val(ld, 'wc', 0.0)
+    bias = Builder.set_val(ld, 'bias')
+    weight = Builder.set_val(ld, 'weight')
+    weightIncr = Builder.set_val(ld, 'weightIncr')
+    biasIncr = Builder.set_val(ld, 'biasIncr')
+    name = Builder.set_val(ld, 'name')
+    disable_bprop = Builder.set_val(ld, 'disable_bprop', default = False)
+    cv = LocalUnsharedLayer(name, numFilter, (filterSize, filterSize), padding, stride, initW, initB, epsW, epsB, momW, momB, wc, bias, weight,
         weightIncr = weightIncr, biasIncr = biasIncr, disable_bprop = disable_bprop)
     return cv
 

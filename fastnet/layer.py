@@ -75,6 +75,9 @@ class DataLayer(Layer):
     
   def fprop(self, input, output, train=TRAIN):
     gpu_copy_to(input, output)
+
+    if PFout:
+      print_matrix(output, self.name)
   
   def bprop(self, grad, input, output, outGrad):
     pass
@@ -169,7 +172,7 @@ class WeightedLayer(Layer):
 
 class ConvLayer(WeightedLayer):
   def __init__(self, name, num_filters, filter_shape, padding=2, stride=1, initW=None,
-               initB=None, partialSum=0, sharedBiases=0, epsW=0.001, epsB=0.002, momW=0.9, momB=0.9, wc=0.004,
+               initB=None, epsW=0.001, epsB=0.002, momW=0.9, momB=0.9, wc=0.004,
       bias=None, weight=None, weightIncr=None, biasIncr=None, disable_bprop=False):
 
     self.numFilter = num_filters
@@ -178,9 +181,6 @@ class ConvLayer(WeightedLayer):
     self.filterSize = filter_shape[0]
     self.padding = padding
     self.stride = stride
-
-    self.partialSum = partialSum
-    self.sharedBiases = sharedBiases
 
     WeightedLayer.__init__(self, name, 'conv', 
                            epsW, epsB, initW, initB, momW, momB, wc, weight,
@@ -246,6 +246,78 @@ class ConvLayer(WeightedLayer):
     # bprop bias
     gpu_copy_to(grad, self.tmp)
     add_row_sum_to_vec(self.bias.grad, self.tmp)
+
+
+class LocalUnsharedLayer(WeightedLayer):
+  def __init__(self, name, num_filters, filter_shape, padding = 2, stride = 1, initW = None, initB =
+      None,  epsW = 0.001, epsB=0.002, momW=0.9, momB=0.9, wc = 0.004, bias = None, weight
+      = None, weightIncr = None, biasIncr = None, disable_bprop = False):
+
+    self.numFilter = num_filters
+    assert filter_shape[0] == filter_shape[1], 'Non-square filters not yet supported.'
+    self.filterSize = filter_shape[0]
+    self.padding = padding
+    self.stride = stride
+
+    WeightedLayer.__init__(self, name, 'local', 
+                           epsW, epsB, initW, initB, momW, momB, wc, weight,
+                           bias, weightIncr, biasIncr, disable_bprop)
+    util.log('numFilter:%s padding:%s stride:%s initW:%s initB:%s, w: %s, b: %s',
+             self.numFilter, self.padding, self.stride, self.initW, self.initB, 
+             self.weight, self.bias)
+
+
+  def attach(self, prev_layer):
+    image_shape = prev_layer.get_output_shape()
+    self.numColor, self.img_size, _, self.batch_size = image_shape
+    self.outputSize = 1 + divup(2 * self.padding + self.img_size - self.filterSize, self.stride)
+    util.log_info('%s %s %s %s: %s', self.padding, self.img_size, self.filterSize, self.stride,
+                  self.outputSize)
+    self.modules = self.outputSize ** 2
+
+    weight_shape = (self.filterSize * self.filterSize * self.numColor * self.modules, self.numFilter)
+    bias_shape = (self.numFilter * self.modules, 1)
+    
+    self._init_weights(weight_shape, bias_shape)
+
+  def get_cross_width(self): 
+    return self.filterSize - 1
+
+  def get_single_img_size(self):
+    return self.modules * self.numFilter
+
+  def get_output_shape(self):
+    return (self.numFilter, self.outputSize, self.outputSize, self.batch_size)
+
+
+  def fprop(self, input, output, train=TRAIN):
+    cudaconv2.localFilterActs(input, self.weight.wt, output, self.img_size, self.outputSize,
+        self.outputSize, -self.padding, self.stride, self.numColor, 1)
+    
+    #util.log_info('%s', output.get().mean())
+    self.tmp = gpuarray.empty((self.numFilter, 
+                               self.get_single_img_size() * self.batch_size / self.numFilter),
+                                dtype=np.float32)
+    
+    add_vec_to_rows(output, self.bias.wt)
+
+    if PFout:
+      print_matrix(output, self.name)
+
+  def bprop(self, grad, input, output, outGrad):
+    self.weight.grad.fill(0)
+    self.bias.grad.fill(0)
+   
+    # bprop to next layer
+    cudaconv2.localImgActs(grad, self.weight.wt, outGrad, self.img_size, self.img_size,
+        self.outputSize, -self.padding, self.stride, self.numColor, 1, 0.0, 1.0)
+    
+    # bprop weight
+    cudaconv2.localWeightActs(input, grad, self.weight.grad, self.img_size, self.outputSize,
+        self.outputSize, self.filterSize, -self.padding, self.stride, self.numColor, 1, 0.0, 1.0)
+    
+    # bprop bias
+    add_row_sum_to_vec(self.bias.grad, grad)
 
 
 class MaxPoolLayer(Layer):
@@ -401,9 +473,9 @@ class FCLayer(WeightedLayer):
         self.dropMask = to_gpu(np.random.uniform(0, 1, output.size).astype(np.float32).reshape(output.shape))
         bigger_than_scaler(self.dropMask, self.dropRate)
         gpu_copy_to(output * self.dropMask, output)
-
     if PFout:
       print_matrix(output, self.name)
+
 
   def bprop(self, grad, input, output, outGrad):
     if self.dropRate > 0.0:

@@ -8,7 +8,7 @@ from fastnet import data, trainer, net, parser
 test_id = 'multiview'
 
 data_dir = '/ssd/nn-data/imagenet/'
-checkpoint_dir = '/hdfs/justin/checkpoint/'
+checkpoint_dir = '/home/justin/fastnet/fastnet/checkpoint/'
 param_file = '/home/justin/fastnet/config/imagenet.cfg'
 output_dir = ''
 output_method = 'disk'

@@ -28,6 +28,8 @@
 #define	CONV_UTIL_CUH
 
 #include <nvmatrix.cuh>
+#include <iostream>
+using namespace std;
 
 void sum(NVMatrix& src, int axis, NVMatrix& target);
 void addVector(NVMatrix& taret, NVMatrix& vec);

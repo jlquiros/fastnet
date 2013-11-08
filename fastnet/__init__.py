@@ -6,3 +6,4 @@
 #from .layer import *
 
 from cudaconv2 import init
+print 'import fasnet'

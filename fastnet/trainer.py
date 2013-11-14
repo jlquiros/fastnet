@@ -193,6 +193,27 @@ class Trainer:
     self.report()
     self._finished_training()
 
+  def predict(self):
+    while self.curr_epoch < 2:
+      batch_size = self.batch_size
+      test_data = self.test_dp.get_next_batch(batch_size)
+      self.curr_epoch =test_data.epoch
+      input, label = test_data.data, test_data.labels
+      if self.multiview:
+        num_view = self.test_dp.num_view
+        self.net.test_batch_multiview(input, label, num_view)
+        cost , correct, numCase = self.net.get_batch_information_multiview(num_view)
+      else:
+        self.net.train_batch(input, label, TEST)
+        cost , correct, numCase, = self.net.get_batch_information()
+      print self.curr_batch
+      self.curr_batch += 1
+
+    self.test_outputs += [({'logprob': [cost, 1 - correct]}, numCase, self.elapsed())]
+    print >> sys.stderr, '---- test ----'
+    print >> sys.stderr, 'error: %f logreg: %f' % (1 - correct, cost)
+
+
   def report(self):
     rep = self.net.get_report()
     if rep is not None:

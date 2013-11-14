@@ -15,6 +15,9 @@ PBout = False
 TEST = 0
 TRAIN = 1
 
+#seed = 0
+#np.random.seed(seed)
+
 def col_rand(shape, dtype):
   return np.require(np.random.rand(*shape), dtype=dtype, requirements='C')  
 
@@ -77,6 +80,7 @@ class DataLayer(Layer):
     gpu_copy_to(input, output)
 
     if PFout:
+    #if True:
       print_matrix(output, self.name)
   
   def bprop(self, grad, input, output, outGrad):

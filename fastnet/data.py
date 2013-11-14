@@ -15,7 +15,8 @@ import sys
 import threading
 import time
 
-seed = 0
+seed = int(time.time())
+#seed = 0
 random.seed(seed)
 np.random.seed(seed)
 
@@ -103,8 +104,10 @@ class DataProvider(object):
     else:
       for idx, img in enumerate(images):
         startY, startX = np.random.randint(0, self.border_size * 2 + 1), np.random.randint(0, self.border_size * 2 + 1)
+        #startY, startX = 0, 0
         endY, endX = startY + self.inner_size, startX + self.inner_size
         pic = img[:, startY:endY, startX:endX]
+        #if False:
         if np.random.randint(2) == 0:  # also flip the image with 50% probability
           pic = pic[:, :, ::-1]
         target[:, idx] = pic.reshape((self.data_dim,))
@@ -263,17 +266,25 @@ class CroppedCifarDataProvider(CifarDataProvider):
   border_size = 4
   multiview = False
 
+
+  def __init__(self, data_dir = '.', batch_range = None):
+    CifarDataProvider.__init__(self, data_dir, batch_range)
+    self.batch_meta['data_mean'] = self.batch_meta['data_mean'].reshape((3, 32, 32))
+    self.batch_meta['data_mean'] = self.batch_meta['data_mean'][:, self.border_size:self.border_size + self.inner_size, self.border_size:self.border_size + self.inner_size]
+    self.batch_meta['data_mean'] = self.batch_meta['data_mean'].reshape((self.data_dim, 1))
+
   def get_next_batch(self):
     self.get_next_index()
     filename = os.path.join(self.data_dir, 'data_batch_%d' % self.curr_batch)
 
     data = util.load(filename)
-    img = data['data'] - self.batch_meta['data_mean']
+    img = data['data']
     img = img.reshape((3, 32, 32, len(data['labels'])))
-    img = img.transpose(3, 0, 2, 1)
+    img = img.transpose(3, 0, 1, 2)
     cropped = np.ndarray((self.data_dim, len(data['labels'])), dtype=np.float32)
 
     self._trim_borders(img, cropped)
+    cropped -= self.batch_meta['data_mean']
 
     return BatchData(np.require(cropped, requirements='C', dtype=np.float32),
                      np.array(data['labels']),

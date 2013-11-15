@@ -149,8 +149,6 @@ class ImageNetDataProvider(DataProvider):
     DataProvider.__init__(self, data_dir, batch_range)
     self.multiview = multiview
     self.batch_size = batch_size
-    if self.multiview:
-      self.batch_size = 12
     self.images = _prepare_images(data_dir, category_range, batch_range, self.batch_meta)
     self.num_view = 5 * 2 if self.multiview else 1
 
@@ -267,8 +265,13 @@ class CroppedCifarDataProvider(CifarDataProvider):
   multiview = False
 
 
-  def __init__(self, data_dir = '.', batch_range = None):
+  def __init__(self, data_dir = '.', batch_range = None, multiview = False):
     CifarDataProvider.__init__(self, data_dir, batch_range)
+    self.multiview = multiview
+    if self.multiview:
+      self.num_view = 10
+    else:
+      self.num_view = 1
     self.batch_meta['data_mean'] = self.batch_meta['data_mean'].reshape((3, 32, 32))
     self.batch_meta['data_mean'] = self.batch_meta['data_mean'][:, self.border_size:self.border_size + self.inner_size, self.border_size:self.border_size + self.inner_size]
     self.batch_meta['data_mean'] = self.batch_meta['data_mean'].reshape((self.data_dim, 1))
@@ -281,7 +284,7 @@ class CroppedCifarDataProvider(CifarDataProvider):
     img = data['data']
     img = img.reshape((3, 32, 32, len(data['labels'])))
     img = img.transpose(3, 0, 1, 2)
-    cropped = np.ndarray((self.data_dim, len(data['labels'])), dtype=np.float32)
+    cropped = np.ndarray((self.data_dim, len(data['labels']) * self.num_view), dtype=np.float32)
 
     self._trim_borders(img, cropped)
     cropped -= self.batch_meta['data_mean']
@@ -408,9 +411,12 @@ class ParallelDataProvider(DataProvider):
     #timer = util.EZTimer('fill reserved data')
 
     self.curr_epoch = batch_data.epoch
-    batch_data.data = copy_to_gpu(batch_data.data)
-    batch_data.labels = copy_to_gpu(batch_data.labels)
-    self._gpu_batch = batch_data
+    if not self.multiview:
+      batch_data.data = copy_to_gpu(batch_data.data)
+      batch_data.labels = copy_to_gpu(batch_data.labels)
+      self._gpu_batch = batch_data
+    else:
+      self._cpu_batch = batch_data
 
   def get_next_batch(self, batch_size):
     if self._reader is None:
@@ -419,26 +425,51 @@ class ParallelDataProvider(DataProvider):
     if self._gpu_batch is None:
       self._fill_reserved_data()
 
-    height, width = self._gpu_batch.data.shape
-    gpu_data = self._gpu_batch.data
-    gpu_labels = self._gpu_batch.labels
-    if self.multiview:
-      batch_size = self.dp.batch_size * self.num_view
-    if self.index + batch_size >=  width:
-      width = width - self.index
-      labels = gpu_labels[self.index/self.num_view:(self.index + batch_size) / self.num_view]
+    if not self.multiview:
+      height, width = self._gpu_batch.data.shape
+      gpu_data = self._gpu_batch.data
+      gpu_labels = self._gpu_batch.labels
+      epoch = self._gpu_batch.epoch
 
-      data = gpuarray.zeros((height, width), dtype = np.float32)
-      gpu_partial_copy_to(gpu_data, data, 0, height, self.index, self.index + width)
+      if self.index + batch_size >=  width:
+        width = width - self.index
+        labels = gpu_labels[self.index:self.index + batch_size]
 
-      self.index = 0
-      self._fill_reserved_data()
+        data = gpuarray.zeros((height, width), dtype = np.float32)
+        gpu_partial_copy_to(gpu_data, data, 0, height, self.index, self.index + width)
+        self.index = 0
+        self._fill_reserved_data()
+      else:
+        labels = gpu_labels[self.index:self.index + batch_size]
+        data = gpuarray.zeros((height, batch_size), dtype = np.float32)
+        gpu_partial_copy_to(gpu_data, data, 0, height, self.index, self.index + batch_size)
+        self.index += batch_size
     else:
-      labels = gpu_labels[self.index/ self.num_view:(self.index + batch_size) / self.num_view]
-      data = gpuarray.zeros((height, batch_size), dtype = np.float32)
-      gpu_partial_copy_to(gpu_data, data, 0, height, self.index, self.index + batch_size)
-      self.index += batch_size
-    return BatchData(data, labels, self._gpu_batch.epoch)
+      # multiview provider
+      # number of views should be 10
+      # when using multiview, do not pre-move data and labels to gpu
+      height, width = self._cpu_batch.data.shape
+      cpu_data = self._cpu_batch.data
+      cpu_labels = self._cpu_batch.labels
+      epoch = self._cpu_batch.epoch
+
+      width /= self.num_view
+
+      print cpu_labels.shape
+      if self.index + batch_size >=  width:
+        batch_size = width - self.index
+
+      print batch_size, self.num_view
+      labels = cpu_labels[self.index:self.index + batch_size]
+      data = np.zeros((height, batch_size * self.num_view), dtype = np.float32)
+      for i in range(self.num_view):
+        data[:, i* batch_size: (i+ 1) * batch_size] = cpu_data[:, self.index + width * i : self.index + width * i + batch_size]
+
+      data = copy_to_gpu(np.require(data, requirements = 'C'))
+      labels = copy_to_gpu(np.require(labels, requirements = 'C'))
+
+      self.index = (self.index + batch_size) / width
+    return BatchData(data, labels, epoch)
 
 
 dp_dict = {}

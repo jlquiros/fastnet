@@ -13,14 +13,14 @@ test_range = range(6, 7) #41, 42, ..., 48
 data_provider = 'cropped-cifar10'
 
 
+multiview = False
 train_dp = data.get_by_name(data_provider)(data_dir,train_range)
-test_dp = data.get_by_name(data_provider)(data_dir, test_range)
+test_dp = data.get_by_name(data_provider)(data_dir, test_range, multiview = multiview)
 checkpoint_dumper = trainer.CheckpointDumper(checkpoint_dir, test_id)
 
 init_model = checkpoint_dumper.get_checkpoint()
 if init_model is None:
   init_model = parser.parse_config_file(param_file)
-  
 
 save_freq = 100
 test_freq = 100
@@ -28,7 +28,7 @@ adjust_freq = 100
 factor = 1
 num_epoch = 10
 learning_rate = 0.01
-batch_size = 128
+batch_size = 64
 image_color = 3
 image_size = 24
 image_shape = (image_color, image_size, image_size, batch_size)

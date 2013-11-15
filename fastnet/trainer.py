@@ -51,15 +51,11 @@ class Trainer:
     self.net = net
     self.curr_batch = self.curr_epoch = 0
     self.annealing_factor = 10
-    self.multiview = 0
+    self.multiview = False
     self.start_time = time.time()
 
     for k, v in kw.iteritems():
       setattr(self, k, v)
-
-    if not hasattr(self, 'multiview'):
-      self.multiview = False
-
 
     checkpoint = self.checkpoint_dumper.get_checkpoint()
     if checkpoint:
@@ -206,7 +202,6 @@ class Trainer:
       else:
         self.net.train_batch(input, label, TEST)
         cost , correct, numCase, = self.net.get_batch_information()
-      print self.curr_batch
       self.curr_batch += 1
 
     self.test_outputs += [({'logprob': [cost, 1 - correct]}, numCase, self.elapsed())]

@@ -13,13 +13,15 @@ param_file = '/home/justin/fastnet/config/imagenet.cfg'
 output_dir = ''
 output_method = 'disk'
 
-train_range = range(101, 1301) #1,2,3,....,40
-test_range = range(1, 101) #41, 42, ..., 48
+train_range = range(101, 102) #1,2,3,....,40
+test_range = range(1, 2) #41, 42, ..., 48
 data_provider = 'imagenet'
 
 
+multiview = True
+
 train_dp = data.get_by_name(data_provider)(data_dir,train_range)
-test_dp = data.get_by_name(data_provider)(data_dir, test_range, test = True, batch_size = 8)
+test_dp = data.get_by_name(data_provider)(data_dir, test_range, multiview = True)
 checkpoint_dumper = trainer.CheckpointDumper(checkpoint_dir, test_id)
 
 model = checkpoint_dumper.get_checkpoint()
@@ -27,7 +29,7 @@ if model is None:
   model = parser.parse_config_file(param_file)
 
 save_freq = 100
-test_freq = 8
+test_freq = 4
 adjust_freq = 100
 factor = 1
 num_epoch = 50

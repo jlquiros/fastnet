@@ -180,7 +180,7 @@ def load_layer(f, layer_id=1):
   except anydbm.error:
     zf = zipfile.ZipFile(cp)
     layer = cPickle.loads(zf.read('layers'))[layer_id]
-  
+ 
   imgs = layer['weight']
   filters = layer['numFilter']
   filter_size = layer['filterSize']
@@ -189,13 +189,41 @@ def load_layer(f, layer_id=1):
   imgs = imgs.reshape(colors, filter_size, filter_size, filters) + layer['bias'].reshape(1, 1, 1, filters)
   return imgs
 
-def plot_filters(imgs):
+def load_layers(f):
+  cp = find_latest(f)
+  try:
+    sf = shelve.open(cp, flag='r')
+    layers = sf['layers']
+  except anydbm.error:
+    zf = zipfile.ZipFile(cp)
+    layers = cPickle.loads(zf.read('layers'))
+
+  weights = {}
+
+  for layer in layers:
+    if not 'weight' in layer: continue
+    if not 'numFilter' in layer: continue
+
+    imgs = layer['weight']
+    filters = layer['numFilter']
+    filter_size = layer['filterSize']
+    colors = layer['numColor']
+  
+    imgs = imgs.reshape(colors, filter_size, filter_size, filters)
+    bias = layer['bias'].reshape(1, 1, 1, filters)
+    weights[layer['name']] = imgs + bias
+
+  return weights
+
+def plot_filters(imgs, ax=None):
   imgs = imgs - imgs.min()
   imgs = imgs / imgs.max()
-  fig = pylab.gcf()
-  fig.set_size_inches(12, 8)
-  
-  ax = fig.add_subplot(111)
+ 
+  if ax is None:
+    fig = pylab.gcf()
+    fig.set_size_inches(12, 8)
+    ax = fig.add_subplot(111)
+
   big_pic = build_image(imgs)
   ax.imshow(big_pic, interpolation='nearest')
 

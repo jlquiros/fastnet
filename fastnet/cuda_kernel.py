@@ -931,6 +931,7 @@ def tanh_compute_grad(grad, output, outGrad, a, b):
 
 @util.timed_fn
 def gpu_copy_to(x, y):
+  assert x.nbytes <= y.nbytes, (x.nbytes, y.nbytes)
   pycuda.driver.memcpy_dtod(y.gpudata, x.gpudata, x.nbytes)
   
 

@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 
-from setuptools import setup, Extension
 
 import os
 import sys
 from distutils.spawn import find_executable
 from distutils import sysconfig
+from setuptools import setup
+
+os.environ['CXX'] = 'nvcc'
+os.environ['CC'] = 'nvcc'
 
 def log(str):
   print >>sys.stderr, str
@@ -15,7 +18,7 @@ if find_executable('nvcc') is None:
   sys.exit(1)
 
 log('About to build cudaconv2 extension.')
-cmd = 'cd cudaconv2 && make -j8 PYTHON_INCLUDE="%s"' % sysconfig.get_python_inc()
+cmd = 'cd cudaconv2 && make PYTHON_INCLUDE="%s"' % sysconfig.get_python_inc()
 
 log(cmd)
 if os.system(cmd) != 0:
@@ -23,7 +26,8 @@ if os.system(cmd) != 0:
   sys.exit(1)
 
 
-extension_modules = []
+extension_modules = [] 
+
 setup(
     name="fastnet",
     description="Fast convolution network library",
@@ -38,6 +42,9 @@ setup(
       'fastnet' : 'fastnet',
       'cudaconv2' : 'cudaconv2' ,
     },
+    data_files = [
+     ('cudaconv2',  ['cudaconv2/_cudaconv2.so'])
+    ],
     requires=[
       'pycuda', 
       'numpy',

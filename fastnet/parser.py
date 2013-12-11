@@ -233,8 +233,7 @@ class CudaconvNetBuilder(FastNetBuilder):
     bias = ld.get('biases', None)
     weight = ld.get('weights', None)
 
-    return ConvLayer(name, numFilter, (filterSize, filterSize), padding, stride, initW, initB, 0, 0, epsW, epsB, momW
-        = momW, momB = momB, wc = wc, bias = bias, weight = weight)
+    return ConvLayer(name, numFilter, (filterSize, filterSize), padding, stride, initW, initB, epsW, epsB, momW = momW, momB = momB, wc = wc, bias = bias, weight = weight)
 
   def pool_layer(self, ld):
     stride = ld['stride']

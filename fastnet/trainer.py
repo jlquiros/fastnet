@@ -43,16 +43,16 @@ def cache_outputs(net, dp, dumper, layer_name = 'pool5', index = -1):
 
 # Trainer should take: (training dp, test dp, fastnet, checkpoint dir)
 class Trainer:
-  def __init__(self, checkpoint_dumper, train_dp, test_dp, batch_size, net=None, **kw):
+  def __init__(self, checkpoint_dumper, train_dp, test_dp, batch_size, net, **kw):
     self.checkpoint_dumper = checkpoint_dumper
     self.train_dp = train_dp
     self.test_dp = test_dp
     self.batch_size = batch_size
-    self.net = net
     self.curr_batch = self.curr_epoch = 0
     self.annealing_factor = 10
     self.multiview = False
     self.start_time = time.time()
+    self.net = net
 
     for k, v in kw.iteritems():
       setattr(self, k, v)

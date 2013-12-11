@@ -49,9 +49,12 @@ class DataProvider(object):
       self.batch_range = self.get_batch_indexes()
     else:
       self.batch_range = batch_range
+
+    util.log('Batch range: %s', self.batch_range)
     random.shuffle(self.batch_range)
 
     self.index = 0
+    self._handle_new_epoch()
 
   def reset(self):
     self.curr_batch_index = 0
@@ -110,6 +113,8 @@ class DataProvider(object):
         #if False:
         if np.random.randint(2) == 0:  # also flip the image with 50% probability
           pic = pic[:, :, ::-1]
+       
+        #print pic.shape, target.shape
         target[:, idx] = pic.reshape((self.data_dim,))
 
 
@@ -145,10 +150,25 @@ class ImageNetDataProvider(DataProvider):
   border_size = 16
   inner_size = 224
 
-  def __init__(self, data_dir, batch_range=None, multiview = False, category_range=None, batch_size=1024):
+  def __init__(self, data_dir,
+               batch_range=None,
+               multiview = False,
+               category_range=None,
+               scale=1,
+               batch_size=1024):
     DataProvider.__init__(self, data_dir, batch_range)
     self.multiview = multiview
     self.batch_size = batch_size
+
+    self.scale = scale
+
+    self.img_size = ImageNetDataProvider.img_size / scale
+    self.border_size = ImageNetDataProvider.border_size / scale
+    self.inner_size = self.img_size - self.border_size * 2
+
+    if self.multiview:
+      self.batch_size = 12
+
     self.images = _prepare_images(data_dir, category_range, batch_range, self.batch_meta)
     self.num_view = 5 * 2 if self.multiview else 1
 
@@ -200,6 +220,10 @@ class ImageNetDataProvider(DataProvider):
 #       util.log('Loading... %s %s', idx, filename)
       jpeg = Image.open(filename)
       if jpeg.mode != "RGB": jpeg = jpeg.convert("RGB")
+      if self.scale != 1:
+        x, y = jpeg.size
+        jpeg = jpeg.resize((x / self.scale, y / self.scale), Image.LINEAR)
+
       # starts as rows * cols * rgb, tranpose to rgb * rows * cols
       img = np.asarray(jpeg, np.uint8).transpose(2, 0, 1)
       images.append(img)
@@ -292,6 +316,7 @@ class CroppedCifarDataProvider(CifarDataProvider):
     return BatchData(np.require(cropped, requirements='C', dtype=np.float32),
                      np.array(data['labels']),
                      self.curr_epoch)
+
 
 
 class IntermediateDataProvider(DataProvider):
@@ -474,21 +499,22 @@ class ParallelDataProvider(DataProvider):
 
 dp_dict = {}
 def register_data_provider(name, _class):
-  if name in dp_dict:
-    print 'Data Provider', name, 'already registered'
-  else:
-    dp_dict[name] = _class
+  assert not name in dp_dict, ('Data Provider', name, 'already registered')
+  dp_dict[name] = _class
 
 def get_by_name(name):
-  if name not in dp_dict:
-    print >> sys.stderr, 'There is no such data provider --', name, '--'
-    sys.exit(-1)
-  else:
-    dp_klass = dp_dict[name]
-    def construct_dp(*args, **kw):
-      dp = dp_klass(*args, **kw)
-      return ParallelDataProvider(dp)
-    return construct_dp
+  assert name in dp_dict, 'No such data provider %s' %  name
+  dp_klass = dp_dict[name]
+  def construct_dp(*args, **kw):
+    dp = dp_klass(*args, **kw)
+    return ParallelDataProvider(dp)
+  return construct_dp
+
+def from_class(dp_klass):
+  def construct_dp(*args, **kw):
+    dp = dp_klass(*args, **kw)
+    return ParallelDataProvider(dp)
+  return construct_dp
 
 
 register_data_provider('cifar10', CifarDataProvider)

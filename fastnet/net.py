@@ -33,18 +33,9 @@ class FastNet(object):
     return layer
 
   def drop_layer_from(self, name):
-    found = False
-    for i, layer in enumerate(self.layers):
-      if layer.name == name:
-        found = True
-        break
-
-    if not found:
-      util.log('Layer: %s not found.', name)
-      return []
-
-    return_layers = self.layers[i:]
-    self.layers = self.layers[0:i]
+    idx = self.get_output_index_by_name(name)
+    return_layers = self.layers[idx:]
+    self.layers = self.layers[0:idx]
     print 'delete layer from', name
     print 'the last layer would be', self.layers[-1].name
     return return_layers
@@ -86,7 +77,12 @@ class FastNet(object):
 
     input = data
     for layer in self.layers:
+      st = time.time()
       layer.fprop(input, layer.output, train)
+      driver.Context.synchronize()
+      ed = time.time()
+      #print 'fprop', layer.name, ed - st
+
       input = layer.output
     
     return self.layers[-1].output
@@ -97,7 +93,11 @@ class FastNet(object):
       curr = self.layers[-i]
       if curr.disable_bprop: return
       prev = self.layers[-(i + 1)]     
+      st = time.time()
       curr.bprop(grad, prev.output, curr.output, prev.output_grad)
+      driver.Context.synchronize()
+      ed = time.time()
+      #print 'bprop', curr.name, ed - st
       grad = prev.output_grad
 
   def update(self):
@@ -237,11 +237,7 @@ class FastNet(object):
     raise KeyError, 'Missing layer: %s' % layer_name
 
   def get_output_by_name(self, layer_name):
-    for idx, l in enumerate(self.layers):
-      if l.name == layer_name:
-        return l.output
-
-    raise KeyError, 'Missing layer: %s' % layer_name
+    return self.get_layer_by_name(layer_name).output
 
   def get_output_index_by_name(self, layer_name):
     for idx, l in enumerate(self.layers):
@@ -260,9 +256,8 @@ class FastNet(object):
     return ''
 
   def get_weight_by_name(self, name):
-    for layer in self.layers:
-      if layer.name == name:
-        return layer.weight.wt.get() + layer.bias.wt.get().transpose()
+    l = self.get_layer_by_name(name)
+    return l.weight.wt.get() + l.bias.wt.get().transpose()
 
   def get_summary(self):
     sum = []

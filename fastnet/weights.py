@@ -44,6 +44,13 @@ def to_gpu(obj):
 
 
 class Weight(object):
+  def __init__(self):
+    self.shape = self._wt = self._incr = self._grad = None
+
+  def reset(self):
+    self.shape = None
+    self._wt = self._incr = self._grad = None
+
   def set_weight(self, w):
     if self.shape is None:
       self.shape = w.shape
@@ -105,11 +112,9 @@ class WeightManager(object):
   def empty(self, name, epsilon, momentum, decay):
     w = Weight()
     w.name = name
-    w.shape = None
     w.decay = np.float32(decay)
     w.epsilon = np.float32(epsilon)
     w.momentum = np.float32(momentum)
-    w._grad = w._wt = w._incr = None
     self._weights.append(w)
     return w
   

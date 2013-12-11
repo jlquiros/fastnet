@@ -48,6 +48,9 @@ class Layer(object):
     
   def update(self):
     pass
+
+  def reset(self):
+    pass
     
   def init_output(self): 
     out_shape = self.get_output_shape()
@@ -77,6 +80,7 @@ class DataLayer(Layer):
     assert False, 'Must be first layer!'
     
   def fprop(self, input, output, train=TRAIN):
+    #print type(input), type(output)
     gpu_copy_to(input, output)
 
     if PFout:
@@ -113,13 +117,13 @@ class WeightedLayer(Layer):
   def _init_weights(self, weight_shape, bias_shape):
     if self.initB is None:
       self.initB = 0.0
-    
+
     if self.initW is None:
       self.initW = 1.0 / np.sqrt(np.prod(weight_shape))
      
     self.bias.shape = bias_shape
     self.weight.shape = weight_shape
-     
+
     if self.weight.wt is None:
       self.weight.set_weight(to_gpu(col_randn(weight_shape, np.float32) * self.initW))
 
@@ -136,10 +140,15 @@ class WeightedLayer(Layer):
     self.clear_weight_incr()
     self.clear_bias_incr()
 
+  def reset(self):
+    self.weight.reset()
+    self.bias.reset()
+
   def update(self):
     if self.disable_bprop:
       return
 
+    #print self.name, np.abs(self.weight.incr.get()).mean(), np.abs(self.bias.incr.get()).mean()
     self.weight.update(self.batch_size)
     self.bias.update(self.batch_size)
 
@@ -198,8 +207,8 @@ class ConvLayer(WeightedLayer):
     image_shape = prev_layer.get_output_shape()
     self.numColor, self.img_size, _, self.batch_size = image_shape
     self.outputSize = 1 + divup(2 * self.padding + self.img_size - self.filterSize, self.stride)
-    util.log_info('%s %s %s %s: %s', self.padding, self.img_size, self.filterSize, self.stride,
-                  self.outputSize)
+    util.log_info('%s %s %s %s: %s',
+                  self.padding, self.img_size, self.filterSize, self.stride, self.outputSize)
     self.modules = self.outputSize ** 2
 
     weight_shape = (self.filterSize * self.filterSize * self.numColor, self.numFilter)
@@ -324,25 +333,32 @@ class LocalUnsharedLayer(WeightedLayer):
     add_row_sum_to_vec(self.bias.grad, grad)
 
 
-class MaxPoolLayer(Layer):
-  def __init__(self, name, poolSize=2, stride=2, start=0, disable_bprop=False):
+class PoolLayer(Layer):
+  def __init__(self, name, pool_type, pool_size, stride, start, disable_bprop):
     Layer.__init__(self, name, 'pool', disable_bprop)
-    self.pool = 'max'
-    self.poolSize = poolSize
+    self.pool = pool_type
+    self.poolSize = pool_size
     self.stride = stride
     self.start = start
-    util.log("pool_size:%s stride:%s start:%s", self.poolSize, self.stride, self.start)
+    #util.log("pool_size:%s stride:%s start:%s", self.poolSize, self.stride, self.start)
 
   def attach(self, prev):
     image_shape = prev.get_output_shape()
     self.numColor, self.img_size, _, self.batch_size = image_shape
     self.outputSize = divup(self.img_size - self.poolSize - self.start, self.stride) + 1
-  
+    assert self.numColor % 16 == 0,\
+      'Pool layers require colors to be a multiple of 16: got %s' % self.numColor
+
   def get_output_shape(self):
     return (self.numColor, self.outputSize, self.outputSize, self.batch_size)
 
-  def get_cross_width(self): 
+  def get_cross_width(self):
     return self.poolSize - 1
+
+
+class MaxPoolLayer(PoolLayer):
+  def __init__(self, name, poolSize=2, stride=2, start=0, disable_bprop=False):
+    PoolLayer.__init__(self, name, 'max', poolSize, stride, start, disable_bprop)
 
   def fprop(self, input, output, train=TRAIN):
     cudaconv2.convLocalMaxPool(input, output, self.numColor, self.poolSize, self.start, self.stride,
@@ -354,24 +370,10 @@ class MaxPoolLayer(Layer):
     cudaconv2.convLocalMaxUndo(input, grad, output, outGrad, self.poolSize,
         self.start, self.stride, self.outputSize, 0.0, 1.0)
 
-class AvgPoolLayer(Layer):
+
+class AvgPoolLayer(PoolLayer):
   def __init__(self, name, poolSize=2, stride=2, start=0, disable_bprop=False):
-    Layer.__init__(self, name, 'pool', disable_bprop)
-    self.pool = 'avg'
-    self.poolSize = poolSize
-    self.stride = stride
-    self.start = start
-    util.log("pool_size:%s stride:%s start:%s", self.poolSize, self.stride, self.start)
-    
-  def attach(self, prev):
-    image_shape = prev.get_output_shape()
-    self.numColor, self.img_size, _, self.batch_size = image_shape
-    self.outputSize = divup(self.img_size - self.poolSize - self.start, self.stride) + 1
-
-  def get_output_shape(self):
-    return (self.numColor, self.outputSize, self.outputSize, self.batch_size)
-
-  def get_cross_width(self): return self.poolSize - 1
+    PoolLayer.__init__(self, name, 'avg', poolSize, stride, start, disable_bprop)
 
   def fprop(self, input, output, train=TRAIN):
     cudaconv2.convLocalAvgPool(input, output, self.numColor, self.poolSize, self.start, self.stride,
@@ -447,8 +449,8 @@ class FCLayer(WeightedLayer):
 
     WeightedLayer.__init__(self, name, 'fc', epsW, epsB, initW, initB, momW, momB, wc, weight,
         bias, weightIncr, biasIncr, disable_bprop)
-    util.log('outputSize:%s initW:%s initB:%s dropRate:%s w: %s, b: %s',
-        self.outputSize, self.initW, self.initB, self.dropRate, self.weight, self.bias)
+    #util.log('outputSize:%s initW:%s initB:%s dropRate:%s w: %s, b: %s',
+    #    self.outputSize, self.initW, self.initB, self.dropRate, self.weight, self.bias)
 
   def attach(self, prev):
     input_shape = prev.get_output_shape()

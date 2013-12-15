@@ -1,7 +1,9 @@
 from fastnet import data, util
 from fastnet.util import print_matrix
+from PIL import Image
 import numpy as np
 import time
+import os
 
 def test_imagenet_loader():
   df = data.get_by_name('imagenet')(
@@ -35,7 +37,15 @@ def test_cifar_loader():
       break
   batch = np.concatenate(data_list, axis = 1)
   print_matrix(batch, 'batch')
-  
-if __name__ == '__main__':
-  test_imagenet_loader()
-  test_cifar_loader()
+
+def test_dir_loader():
+  os.system('mkdir -p /tmp/imgdir')
+  for i in range(10):
+    os.system('mkdir -p /tmp/imgdir/cat-%d' % i)
+    for j in range(10):
+      Image.new('RGB', (256, 256), 'white').save('/tmp/imgdir/cat-%d/%d.jpg' % (i, j))
+
+  data_dir = '/tmp/imgdir'
+  dp = data.DirectoryDataProvider(data_dir=data_dir, crop=1, target_size=32)
+  batch = dp.get_next_batch()
+  print batch.labels

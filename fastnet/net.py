@@ -7,6 +7,10 @@ import numpy as np
 import sys
 import time
 
+def to_gpu(array):
+  if isinstance(array, gpuarray.GPUArray): return array
+  return gpuarray.to_gpu(array).astype(np.float32)
+
 class FastNet(object):
   def __init__(self, image_shape):
     self.batch_size = -1
@@ -73,10 +77,12 @@ class FastNet(object):
     return stack
 
   def fprop(self, data, train=TRAIN):
+    self.prepare_for_train(data)
     assert len(self.layers) > 0, 'No outputs: uninitialized network!'
 
     input = data
     for layer in self.layers:
+      util.log_info('Fprop: %s', layer.name)
       st = time.time()
       layer.fprop(input, layer.output, train)
       driver.Context.synchronize()
@@ -164,7 +170,7 @@ class FastNet(object):
   def get_correct(self):
     return self.layers[-1].get_correct()
 
-  def prepare_for_train(self, data, label):
+  def prepare_for_train(self, data):
     timer.start()
 
     # If data size doesn't match our expected batch_size, reshape outputs.
@@ -174,19 +180,13 @@ class FastNet(object):
         layer.change_batch_size(self.batch_size)
         layer.init_output()
 
-    if not isinstance(data, GPUArray):
-      data = gpuarray.to_gpu(data).astype(np.float32)
-
-    if not isinstance(label, GPUArray):
-      label = gpuarray.to_gpu(label).astype(np.float32)
-
-    label = label.reshape((label.size, 1))
     self.numCase += data.shape[1]
 
-    return data, label
-
   def train_batch(self, data, label, train=TRAIN, ):
-    data, label = self.prepare_for_train(data, label)
+    data = to_gpu(data)
+    label = to_gpu(label)
+
+    label = label.reshape((label.size, 1))
     prediction = self.fprop(data, train)
     cost, correct = self.get_cost(label, prediction)
     self.cost += cost
@@ -202,7 +202,10 @@ class FastNet(object):
     driver.Context.synchronize()
 
   def test_batch_multiview(self, data, label, num_view):
-    data, label = self.prepare_for_train(data, label)
+    data = to_gpu(data)
+    label = to_gpu(label)
+    label = label.reshape((label.size, 1))
+    
     prediction = self.fprop(data, TEST)
     cost, correct = self.get_cost_multiview(label, prediction, num_view)
     self.cost += cost

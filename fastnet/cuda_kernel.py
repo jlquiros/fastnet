@@ -14,8 +14,7 @@ import pycuda
 import sys
 
 
-import cudaconv2
-cudaconv2.init()
+util.log_info('Initializing kernels...')
 
 sgemm = None
 def _initialize_cublas():
@@ -28,7 +27,10 @@ def _initialize_cublas():
     handle = cublas.cublasCreate()
     def sgemm(*args):
       cublas.cublasSgemm(handle, *args)
+
 _initialize_cublas()
+
+
 class CompiledSource(object):
   '''
   Compile a source string with PyCuda, caching the resulting module.
@@ -953,8 +955,11 @@ def gpu_partial_copy_to(x, y, row_from, row_to, col_from, col_to):
 #@util.lazyinit(_initialize_cublas)
 @util.timed_fn
 def dot(x, y):
+  #return gpuarray.to_gpu(np.dot(x.get(), y.get()))
   if isinstance(x, GPUArray):
     result = GPUArray((y.shape[1], x.shape[0]), dtype=x.dtype)
+    #util.log_info('%s %s %s', x.shape, y.shape, result.shape)
+    #util.log_info('%s %s %s', x.ptr, y.ptr, result.ptr)
     sgemm('t', 't', x.shape[0], y.shape[1], x.shape[1], 1.0,
           x.gpudata, x.shape[1], y.gpudata, y.shape[1], 0.0,
           result.gpudata, result.shape[1])

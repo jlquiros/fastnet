@@ -8,6 +8,7 @@ import sys
 import time
 
 def to_gpu(array):
+  assert array.dtype == np.float32
   if isinstance(array, gpuarray.GPUArray): return array
   return gpuarray.to_gpu(array).astype(np.float32)
 
@@ -77,12 +78,14 @@ class FastNet(object):
     return stack
 
   def fprop(self, data, train=TRAIN):
+    assert data.dtype == np.float32
+    data = to_gpu(data)
     self.prepare_for_train(data)
     assert len(self.layers) > 0, 'No outputs: uninitialized network!'
 
     input = data
     for layer in self.layers:
-      util.log_info('Fprop: %s', layer.name)
+      #util.log_info('Fprop: %s', layer.name)
       st = time.time()
       layer.fprop(input, layer.output, train)
       driver.Context.synchronize()
@@ -171,10 +174,12 @@ class FastNet(object):
     return self.layers[-1].get_correct()
 
   def prepare_for_train(self, data):
+    assert len(data.shape) == 2, 'Data shape must be (imagedata, #images)'
     timer.start()
 
     # If data size doesn't match our expected batch_size, reshape outputs.
     if data.shape[1] != self.batch_size:
+      #util.log_info('Setting batch size %s', data.shape[1])
       self.batch_size = data.shape[1]
       for layer in self.layers:
         layer.change_batch_size(self.batch_size)

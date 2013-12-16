@@ -56,7 +56,7 @@ class Layer(object):
     out_shape = self.get_output_shape()
     rows = int(np.prod(out_shape[:3]))
     cols = out_shape[3]
-    #util.log('Allocating: %s ', out_shape)
+    #util.log('Layer %s allocating: (%s,%s) ', self.name, rows, cols)
     self.output = gpuarray.GPUArray((rows, cols), dtype=np.float32)
     self.output_grad = gpuarray.GPUArray((rows, cols), dtype=np.float32)
 
@@ -80,7 +80,7 @@ class DataLayer(Layer):
     assert False, 'Must be first layer!'
     
   def fprop(self, input, output, train=TRAIN):
-    #print type(input), type(output)
+    #util.log_info("%s %s", input.shape, output.shape)
     gpu_copy_to(input, output)
 
     if PFout:

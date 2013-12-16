@@ -14,7 +14,9 @@ import pycuda
 import sys
 
 
-fastnet.init()
+import cudaconv2
+cudaconv2.init()
+
 sgemm = None
 def _initialize_cublas():
   global sgemm

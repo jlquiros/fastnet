@@ -120,7 +120,7 @@ class DataProvider(object):
         if np.random.randint(2) == 0:  # also flip the image with 50% probability
           pic = pic[:, :, ::-1]
      
-        print pic.shape, target[:,idx].shape
+        #print pic.shape, target[:,idx].shape
         target[:, idx] = pic.reshape((self.data_dim,))
 
 

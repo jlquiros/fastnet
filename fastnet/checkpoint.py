@@ -1,4 +1,3 @@
-from fastnet import util
 import cPickle
 import glob
 import numpy as np
@@ -7,6 +6,8 @@ import random
 import shelve
 import string
 import zipfile
+
+from fastnet import util
 
 
 class DataDumper(object):
@@ -35,7 +36,7 @@ class DataDumper(object):
 
   def flush(self):
     if self.sz == 0:
-      return  
+      return
 
     out = {}
     for k in self.data[0].keys():
@@ -64,6 +65,7 @@ class DataDumper(object):
     if lis:
       return len(lis)
     return 0
+
 
 class MemoryDataHolder(object):
   def __init__(self, single_memory_size=50e6, total_memory_size=4e9):
@@ -136,16 +138,16 @@ class MemoryDataHolder(object):
 
 
 class CheckpointDumper(object):
-  def __init__(self, checkpoint_dir, test_id, max_cp_size=5e9):
+  def __init__(self, checkpoint_dir, test_id, max_cp_size=2e9):
     self.test_id = test_id
     self.counter = iter(xrange(10000))
     self.max_cp_size = max_cp_size
-    
+
     if checkpoint_dir is None:
       util.log_info('Checkpoint directory is None; checkpointing is disabled.')
       self.checkpoint_dir = None
       return
-      
+
     if test_id == '':
       self.checkpoint_dir = checkpoint_dir
     else:
@@ -157,14 +159,15 @@ class CheckpointDumper(object):
   def get_checkpoint(self):
     if self.checkpoint_dir is None:
       return None
-    
-     
+
     if self.test_id == '':
       cp_pattern = self.checkpoint_dir
     else:
       cp_pattern = os.path.join(self.checkpoint_dir, "*")
     cp_files = glob.glob(cp_pattern)
+
     if not cp_files:
+      util.log_info('Not checkpoint files found in %s' % cp_pattern)
       return None
 
     checkpoint_file = sorted(cp_files, key=os.path.getmtime)[-1]
@@ -172,7 +175,8 @@ class CheckpointDumper(object):
 
     try:
       #return shelve.open(checkpoint_file, flag='r', protocol=-1, writeback=False)
-      return shelve.open(checkpoint_file, flag='r', protocol=-1, writeback=False)
+      return shelve.open(checkpoint_file, flag='r', protocol=-1,
+                         writeback=False)
     except:
       dict = {}
       with zipfile.ZipFile(checkpoint_file) as zf:
@@ -183,39 +187,24 @@ class CheckpointDumper(object):
   def dump(self, checkpoint, suffix=0):
     if self.checkpoint_dir is None:
       return
-    
+
     cp_pattern = os.path.join(self.checkpoint_dir, '*')
     cp_files = [(f, os.stat(f)) for f in glob.glob(cp_pattern)]
     cp_files = list(reversed(sorted(cp_files, key=lambda f: f[1].st_mtime)))
 
-    #while sum([f[1].st_size for f in cp_files]) > self.max_cp_size:
-    #  os.remove(cp_files.pop())
+    while sum([f[1].st_size for f in cp_files]) > self.max_cp_size:
+      os.remove(cp_files.pop())
 
     checkpoint_filename = "%d" % suffix
     checkpoint_filename = os.path.join(self.checkpoint_dir, checkpoint_filename)
 
     util.log('Writing checkpoint to %s', checkpoint_filename)
-    if checkpoint_filename.startswith('/hdfs'):
-      print 'Writing to hdfs '
-      suf = ''
-      for i in range(6):
-        suf += random.choice(string.ascii_letters)
-      tempfilename = '/tmp/' + suf
-      print 'temp filename is', tempfilename
-      sf = shelve.open(tempfilename, flag = 'c', protocol=-1, writeback=False)
-      #sf = shelve.open(checkpoint_filename, flag='c', protocol=-1, writeback=False)
-      for k, v in checkpoint.iteritems():
-        sf[k] = v
-      sf.sync()
-      sf.close()
-      #shutil.copy2(tempfilename, checkpoint_filename)
-      os.system('mv %s %s' %( tempfilename, checkpoint_filename))
-    else:
-      sf = shelve.open(checkpoint_filename, flag='c', protocol=-1, writeback=False)
-      for k, v in checkpoint.iteritems():
-        sf[k] = v
-      sf.sync()
-      sf.close()
+    sf = shelve.open(checkpoint_filename, flag='c', protocol=-1,
+                     writeback=False)
+    for k, v in checkpoint.iteritems():
+      sf[k] = v
+    sf.sync()
+    sf.close()
 
     util.log('save file finished')
 

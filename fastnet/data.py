@@ -575,11 +575,9 @@ else:
 
         width /= self.num_view
 
-        print cpu_labels.shape
         if self.index + batch_size >=  width:
           batch_size = width - self.index
 
-        print batch_size, self.num_view
         labels = cpu_labels[self.index:self.index + batch_size]
         data = np.zeros((height, batch_size * self.num_view), dtype = np.float32)
         for i in range(self.num_view):
@@ -588,7 +586,10 @@ else:
         data = copy_to_gpu(np.require(data, requirements = 'C'))
         labels = copy_to_gpu(np.require(labels, requirements = 'C'))
 
+
         self.index = (self.index + batch_size) / width
+      
+      #util.log_info('Batch: %s %s %s', data.shape, gpu_labels.shape, labels.shape)
       return BatchData(data, labels, epoch)
 
 

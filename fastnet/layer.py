@@ -16,7 +16,7 @@ TEST = 0
 TRAIN = 1
 
 #seed = 0
-#np.random.seed(seed)
+np.random.seed()
 
 def col_rand(shape, dtype):
   return np.require(np.random.rand(*shape), dtype=dtype, requirements='C')  
@@ -198,17 +198,11 @@ class ConvLayer(WeightedLayer):
     WeightedLayer.__init__(self, name, 'conv', 
                            epsW, epsB, initW, initB, momW, momB, wc, weight,
                            bias, weightIncr, biasIncr, disable_bprop)
-    
-    util.log('numFilter:%s padding:%s stride:%s initW:%s initB:%s, w: %s, b: %s',
-             self.numFilter, self.padding, self.stride, self.initW, self.initB, 
-             self.weight, self.bias)
 
   def attach(self, prev_layer):
     image_shape = prev_layer.get_output_shape()
     self.numColor, self.img_size, _, self.batch_size = image_shape
     self.outputSize = 1 + divup(2 * self.padding + self.img_size - self.filterSize, self.stride)
-    util.log_info('%s %s %s %s: %s',
-                  self.padding, self.img_size, self.filterSize, self.stride, self.outputSize)
     self.modules = self.outputSize ** 2
 
     weight_shape = (self.filterSize * self.filterSize * self.numColor, self.numFilter)
@@ -393,7 +387,6 @@ class ResponseNormLayer(Layer):
     self.scale = scale
     self.scaler = self.scale / self.size ** 2
     self.denom = None
-    util.log("pow:%s size:%s scale:%s scaler:%s", self.pow, self.size, self.scale, self.scaler)
 
   def attach(self, prev):
     image_shape = prev.get_output_shape()
@@ -424,8 +417,6 @@ class CrossMapResponseNormLayer(ResponseNormLayer):
     self.type = 'cmrnorm'
     self.scaler = self.scale / self.size
     self.blocked = blocked
-
-    util.log("pow:%s size:%s, scale:%s scaler:%s", self.pow, self.size, self.scale, self.scaler)
 
   def get_cross_width(self): return self.size - 1
 
@@ -492,7 +483,6 @@ class FCLayer(WeightedLayer):
     self.weight.set_grad(dot(grad, transpose(input)))
     add_row_sum_to_vec(self.bias.grad, grad, alpha=0.0)
 
-
 class SoftmaxLayer(Layer):
   def __init__(self, name, disable_bprop=False):
     Layer.__init__(self, name, "softmax", disable_bprop)
@@ -509,24 +499,33 @@ class SoftmaxLayer(Layer):
     return (self.outputSize, 1, 1, self.batch_size)
 
   def fprop(self, input, output, train=TRAIN):
-    max = gpuarray.zeros((1, self.batch_size), dtype=np.float32)
-    col_max_reduce(max, input)
-    add_vec_to_cols(input, max, output, alpha=-1)
-    eltwise_exp(output)
-    sum = gpuarray.zeros(max.shape, dtype=np.float32)
-    add_col_sum_to_vec(sum, output, alpha=0)
+    y = input.get()
+    y -= y.max(axis=0)
+    yexp = np.exp(y)
+    softmax = yexp / np.sum(yexp, axis=0)
+    output.set(softmax)
 
-    div_vec_to_cols(output, sum)
-    if PFout:
-      print_matrix(output, self.name)
+  def bprop(self, label, input, output, outGrad):
+    label = label.get().ravel().astype(np.int32)
+    cpu_grad = np.zeros(outGrad.shape, dtype=np.float32)
+    num_labels, num_examples = outGrad.shape
+    output = output.get()
+    input_bits = np.zeros(output.shape, dtype=np.float32)
+    for i in range(label.size):
+      input_bits[label[i], i] = 1
+    outGrad.set(input_bits - output)
+    #softmax_bprop(output, label, outGrad)
 
   def logreg_cost(self, label, output):
-    if self.cost.shape[0] != self.batch_size:
-      self.cost = gpuarray.zeros((self.batch_size, 1), dtype=np.float32)
-    maxid = gpuarray.zeros((self.batch_size, 1), dtype=np.float32)
-    find_col_max_id(maxid, output)
-    self.batchCorrect = same_reduce(label , maxid)
-    logreg_cost_col_reduce(output, label, self.cost)
+    output = output.get()
+    maxid = output.argmax(axis=0).ravel().astype(np.int32)
+    label = label.get().ravel().astype(np.int32)
+    
+    self.batchCorrect = float(np.count_nonzero(label == maxid))
+    cost = []
+    for i in xrange(output.shape[1]):
+      cost.append(np.log(output[label[i], i]))
+    self.cost = -np.sum(cost)
 
   def logreg_cost_multiview(self, label, output, num_view):
     unit = self.batch_size / num_view
@@ -538,10 +537,6 @@ class SoftmaxLayer(Layer):
     tmp = gpuarray.zeros((output.shape[0], unit), dtype = np.float32)
     gpu_partial_copy_to(output, tmp, 0, output.shape[0], 0, unit)
     logreg_cost_col_reduce(tmp, label, self.cost)
-
-  def bprop(self, label, input, output, outGrad):
-    softmax_bprop(output, label, outGrad)
-
 
   def get_correct(self):
     return  1.0 * self.batchCorrect / self.batch_size

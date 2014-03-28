@@ -127,16 +127,15 @@ class FastNet(object):
       if isinstance(layer, WeightedLayer):
         layer.weight.epsilon = eps_w
         layer.bias.epsilon = eps_w
+    
     self.print_learning_rates()
 
   def print_learning_rates(self):
-    util.log('Learning rates:')
+    util.log_info('Learning rates:')
     for layer in self.layers:
       if isinstance(layer, WeightedLayer):
-        util.log('%s: %s %s %s', layer.name, layer.__class__.__name__, 
+        util.log_info('%s: %s %s %s', layer.name, layer.__class__.__name__, 
                  layer.weight.epsilon, layer.bias.epsilon)
-      else:
-        util.log('%s: %s', layer.name, layer.__class__.__name__)
 
   def clear_weight_incr(self):
     for l in self.layers:
@@ -147,7 +146,7 @@ class FastNet(object):
     cost_layer = self.layers[-1]
     assert not np.any(np.isnan(prediction.get()))
     cost_layer.logreg_cost(label, prediction)
-    return cost_layer.cost.get().sum(), cost_layer.batchCorrect
+    return cost_layer.cost, cost_layer.batchCorrect
 
   def get_cost_multiview(self, label, prediction, num_view):
     cost_layer = self.layers[-1]
@@ -188,6 +187,7 @@ class FastNet(object):
     self.numCase += data.shape[1]
 
   def train_batch(self, data, label, train=TRAIN, ):
+    #util.log_info('%s %s', data.shape, label.shape)
     data = to_gpu(data)
     label = to_gpu(label)
 

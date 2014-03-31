@@ -193,7 +193,7 @@ class CheckpointDumper(object):
     cp_files = list(reversed(sorted(cp_files, key=lambda f: f[1].st_mtime)))
 
     while sum([f[1].st_size for f in cp_files]) > self.max_cp_size:
-      os.remove(cp_files.pop())
+      os.remove(cp_files.pop()[0])
 
     checkpoint_filename = "%d" % suffix
     checkpoint_filename = os.path.join(self.checkpoint_dir, checkpoint_filename)

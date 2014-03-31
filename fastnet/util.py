@@ -1,4 +1,5 @@
 import cPickle
+import logging
 import os
 import sys
 import threading
@@ -6,45 +7,19 @@ import time
 import traceback
 import numpy as np
 
-DEBUG = 0
-INFO = 1
-WARN = 2
-ERROR = 3
-FATAL = 4
+def findCaller(obj):
+  f = sys._getframe(5)
+  co = f.f_code
+  filename = os.path.normcase(co.co_filename)
+  return co.co_filename, f.f_lineno, co.co_name
 
-log_level = INFO
-level_to_char = { DEBUG : 'D',
-                  INFO : 'I',
-                  WARN : 'W',
-                  ERROR : 'E',
-                  FATAL : 'F', 
-                  }
+log = logging.info
+log_debug = logging.debug
+log_info = logging.info
+log_warn = logging.warn
+log_error = logging.error
+log_fatal = logging.fatal
 
-program_start = time.time()
-log_mutex = threading.Lock()
-def log(msg, *args, **kw):
-  level = kw.get('level', INFO)
-  if level < log_level:
-    return
-
-  with log_mutex:
-    caller = sys._getframe(kw.get('caller_frame', 1))
-    filename = caller.f_code.co_filename
-    lineno = caller.f_lineno
-    now = time.time() - program_start
-    if 'exc_info' in kw:
-      exc = ''.join(traceback.format_exc())
-    else:
-      exc = None
-    print >> sys.stderr, '%s %.3f:%s:%d: %s' % (level_to_char[level], now, os.path.basename(filename), lineno, msg % args)
-    if exc:
-      print >> sys.stderr, exc
-
-def log_debug(msg, *args, **kw): log(msg, *args, level=DEBUG, caller_frame=2)
-def log_info(msg, *args, **kw): log(msg, *args, level=INFO, caller_frame=2)
-def log_warn(msg, *args, **kw): log(msg, *args, level=WARN, caller_frame=2)
-def log_error(msg, *args, **kw): log(msg, *args, level=ERROR, caller_frame=2)
-def log_fatal(msg, *args, **kw): log(msg, *args, level=FATAL, caller_frame=2)
 
 class Timer:
   def __init__(self):

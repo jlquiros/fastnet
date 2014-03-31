@@ -45,7 +45,7 @@ setup(
     data_files = [
      ('cudaconv2',  ['cudaconv2/_cudaconv2.so'])
     ],
-    requires=[
+    install_requires=[
       'pycuda', 
       'numpy',
       'scikits.cuda',

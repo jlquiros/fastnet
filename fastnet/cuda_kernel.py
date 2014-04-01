@@ -14,7 +14,11 @@ import pycuda
 import sys
 
 
-NO_CUBLAS = False
+CUBLAS_ENABLED = True
+def disable_cublas():
+  global CUBLAS_ENABLED
+  CUBLAS_ENABLED = False
+
 sgemm = None
 def _initialize_cublas():
   global sgemm
@@ -955,7 +959,7 @@ def gpu_partial_copy_to(x, y, row_from, row_to, col_from, col_to):
 #@util.lazyinit(_initialize_cublas)
 @util.timed_fn
 def dot(x, y):
-  if NO_CUBLAS:
+  if not CUBLAS_ENABLED:
     return gpuarray.to_gpu(np.dot(x.get(), y.get()))
 
   if isinstance(x, GPUArray):

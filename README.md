@@ -14,12 +14,8 @@ python setup.py develop [--user]
 
 **Usage**
 
-To run a trainer directly:
-
-    python fastnet/trainer.py --help
-    
-Take a look at the scripts in `fastnet/scripts` for examples of how to run your own network.
-
+Look at the example experiments in the `experiments` folder to see how to 
+build and train a network.
 
 **Requires**
 

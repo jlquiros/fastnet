@@ -48,6 +48,7 @@ setup(
     install_requires=[
       'pycuda', 
       'numpy',
+      'traits',
       'scikits.cuda',
     ],
     ext_modules = extension_modules)

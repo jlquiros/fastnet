@@ -1,5 +1,5 @@
 import fastnet
-from fastnet import util
+from . import util
 from fastnet.util import timer, divup
 from pycuda import gpuarray
 from pycuda.compiler import SourceModule
@@ -14,16 +14,18 @@ import pycuda
 import sys
 
 
+util.log_info('Initializing kernels...')
+
 CUBLAS_ENABLED = True
 def disable_cublas():
   global CUBLAS_ENABLED
   CUBLAS_ENABLED = False
 
+
 sgemm = None
 def _initialize_cublas():
   global sgemm
 
-  util.log_info('Initializing cublas.')
   try:
     cublas.cublasInit()
     sgemm = cublas.cublasSgemm
@@ -50,7 +52,7 @@ class CompiledSource(object):
       print >> sys.stderr, 'Compiling...', self.kernel_name
       self.module = SourceModule(self.src)
       self.kernel = self.module.get_function(self.kernel_name)
-
+      
     self.kernel(*args, **kw)
 
 
@@ -670,7 +672,7 @@ def find_row_max_id(x, mat):
   block = (mw, 1, 1)
   leading = mat.strides[0] / 4
   _find_row_max_id_(mat, x, I(leading), I(mh), I(mw), block=block, grid=grid)
-
+  
 
 
 @util.timed_fn
@@ -689,7 +691,7 @@ def find_col_max_id(x, mat):
   leading = mat.strides[0] / 4
 
   _find_col_max_id_(mat, x, I(leading), I(mh), I(mw), block=block, grid=grid)
-
+  
 
 
 
@@ -710,7 +712,7 @@ def add_vec_to_rows(mat, vec, dest=None, alpha=1.0, beta=1.0):
   grid = (divup(mw, 32), divup(mh, 32))
   leading = mat.strides[0] / 4
   _add_vec_to_rows_(F(alpha), vec, F(beta), mat, dest, I(leading), I(mh), I(mw), block=block, grid=grid)
-
+  
 
 @util.timed_fn
 def add_vec_to_cols(mat, vec, dest=None, alpha=1.0, beta=1.0):
@@ -729,7 +731,7 @@ def add_vec_to_cols(mat, vec, dest=None, alpha=1.0, beta=1.0):
   grid = (divup(mw, 32), divup(mh, 32))
   leading = mat.strides[0] / 4
   _add_vec_to_cols_(F(alpha), vec, F(beta), mat, dest, I(leading), I(mh), I(mw), block=block, grid=grid)
-
+  
 
 
 @util.timed_fn
@@ -746,7 +748,7 @@ def div_vec_to_rows(mat, vec, dest=None):
   grid = (divup(mw, 32), divup(mh, 32))
   leading = mat.strides[0] / 4
   _div_vec_to_rows_(vec, mat, dest, I(leading), I(mh), I(mw), block=block, grid=grid)
-
+  
 
 
 
@@ -764,7 +766,7 @@ def div_vec_to_cols(mat, vec, dest=None):
   grid = (divup(mw , 32), divup(mh, 32))
   leading = mat.strides[0] / 4
   _div_vec_to_cols_(vec, mat, dest, I(leading), I(mh), I(mw), block=block, grid=grid)
-
+  
 
 
 
@@ -798,7 +800,7 @@ def add_row_sum_to_vec(vec, mat, alpha=1.0, beta=1.0):
   #  leading = mat.strides[0]/4
   #  _add_row_sum_to_vec_(mat, F(alpha), tmp, F(beta), I(leading), I(mh),I(mw), block = block, grid = grid)
   #  add_row_sum_to_vec(vec, tmp)
-
+  
 
 
 @util.timed_fn
@@ -819,7 +821,7 @@ def add_col_sum_to_vec(vec, mat, alpha=1.0, beta=1.0):
   #block = (1, mh, 1)
   #leading = mat.strides[0] / 4
   #_add_col_sum_to_vec_(mat, F(alpha), vec, F(beta), I(leading), I(mh), I(mw), block=block, grid=grid)
-
+  
 
 
 @util.timed_fn
@@ -834,7 +836,7 @@ def same_reduce(target, vec):
   tmp.shape = (1, tmp.size)
   res = gpuarray.to_gpu(np.zeros((1, 1)).astype(np.float32))
   add_row_sum_to_vec(res, tmp)
-
+  
   return int(res.get()[0, 0])
 
 @util.timed_fn
@@ -859,7 +861,7 @@ def logreg_cost_row_reduce(mat, label, cost):
   block = (mh, 1, 1)
   grid = (1, 1)
   _logreg_cost_row_reduce_(mat, label, cost, np.int32(mat.strides[0] / 4), block=block, grid=grid)
-
+  
 
 
 @util.timed_fn
@@ -874,7 +876,7 @@ def logreg_cost_col_reduce(mat, label, cost):
   block = (mw, 1, 1)
   grid = (1, 1)
   _logreg_cost_col_reduce_(mat, label, cost, np.int32(mat.strides[0] / 4), block=block, grid=grid)
-
+  
 
 
 
@@ -888,7 +890,7 @@ def softmax_bprop(mat, label, grad):
   block = (32, 32, 1)
   grid = (divup(mw, 32), divup(mh, 32))
   _softmax_bprop_(mat, label, grad, I(mat.strides[0] / 4), I(mh), I(mw), block=block, grid=grid)
-
+  
 
 @util.timed_fn
 def relu_activate(input, output, e):
@@ -898,7 +900,7 @@ def relu_activate(input, output, e):
   grid = (divup(mw, 32), divup(mh, 32))
   leading = input.strides[0] / 4
   _relu_activate_(input, output, F(e), I(leading), I(mh), I(mw), block=block , grid=grid)
-
+  
 
 
 @util.timed_fn
@@ -910,7 +912,7 @@ def relu_compute_grad(grad, output, outGrad, e):
   leading = grad.strides[0] / 4
   _relu_compute_grad_(grad, output, outGrad, F(e), I(leading), I(mh), I(mw), block=block, grid=
       grid)
-
+  
 
 @util.timed_fn
 def tanh_activate(input, output, a, b):
@@ -921,7 +923,7 @@ def tanh_activate(input, output, a, b):
   leading = input.strides[0] / 4
   _n2b = -2.0 * b
   _tanh_activate_(input, output, F(a), F(_n2b), I(leading), I(mh), I(mw), block=block , grid=grid)
-
+  
 
 
 @util.timed_fn
@@ -933,7 +935,7 @@ def tanh_compute_grad(grad, output, outGrad, a, b):
   leading = output.strides[0] / 4
   _n4ab = -4.0 * a * b
   _tanh_compute_grad_(grad, output, outGrad, F(a), F(_n4ab), I(leading), I(mh), I(mw), block=block , grid=grid)
-
+  
 
 
 
@@ -941,7 +943,7 @@ def tanh_compute_grad(grad, output, outGrad, a, b):
 def gpu_copy_to(x, y):
   assert x.nbytes <= y.nbytes, (x.nbytes, y.nbytes)
   pycuda.driver.memcpy_dtod(y.gpudata, x.gpudata, x.nbytes)
-
+  
 
 @util.timed_fn
 def gpu_partial_copy_to(x, y, row_from, row_to, col_from, col_to):
@@ -954,7 +956,7 @@ def gpu_partial_copy_to(x, y, row_from, row_to, col_from, col_to):
   grid = (divup(c, 32), divup(r, 32))
   sleading, dleading = x.strides[0] / 4, y.strides[0] / 4
   _gpu_partial_copy_to_(x, y, I(row_from), I(row_to), I(col_from), I(col_to), I(sleading), I(dleading), block=block, grid=grid)
-
+  
 
 #@util.lazyinit(_initialize_cublas)
 @util.timed_fn
@@ -1001,7 +1003,7 @@ def matrix_add(src, v, dest=None, alpha=1.0, beta=1.0):
   leading = src.strides[0] / 4
   if dest is None:
     dest = src
-  _matrix_add_(src, v, dest, F(alpha), F(beta), I(leading), I(sh), I(sw),
+  _matrix_add_(src, v, dest, F(alpha), F(beta), I(leading), I(sh), I(sw), 
                block=block , grid=grid)
 
 
@@ -1041,3 +1043,10 @@ def eltwise_mul(src, right, dest = None):
   grid = (divup(mw, 32), divup(mh, 32))
   leading = src.strides[0] / 4
   _eltwise_mul_(src, right, dest, I(mh), I(mw), I(leading), block = block, grid = grid)
+
+@util.timed_fn
+def multilabel_error(output, label):
+  output = output.get()
+  label = label.get()
+
+  return output - label

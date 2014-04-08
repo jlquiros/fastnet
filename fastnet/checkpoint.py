@@ -1,13 +1,10 @@
+from . import util
 import cPickle
 import glob
 import numpy as np
 import os
 import random
-import shelve
 import string
-import zipfile
-
-from fastnet import util
 
 
 class DataDumper(object):
@@ -36,7 +33,7 @@ class DataDumper(object):
 
   def flush(self):
     if self.sz == 0:
-      return
+      return  
 
     out = {}
     for k in self.data[0].keys():
@@ -65,7 +62,6 @@ class DataDumper(object):
     if lis:
       return len(lis)
     return 0
-
 
 class MemoryDataHolder(object):
   def __init__(self, single_memory_size=50e6, total_memory_size=4e9):
@@ -138,73 +134,50 @@ class MemoryDataHolder(object):
 
 
 class CheckpointDumper(object):
-  def __init__(self, checkpoint_dir, test_id, max_cp_size=2e9):
-    self.test_id = test_id
+  def __init__(self, checkpoint_dir, max_cp_size=5e9):
     self.counter = iter(xrange(10000))
     self.max_cp_size = max_cp_size
-
+    
     if checkpoint_dir is None:
       util.log_info('Checkpoint directory is None; checkpointing is disabled.')
       self.checkpoint_dir = None
       return
-
-    if test_id == '':
-      self.checkpoint_dir = checkpoint_dir
-    else:
-      self.checkpoint_dir = os.path.join(checkpoint_dir, test_id)
-
+      
+    self.checkpoint_dir = checkpoint_dir
     if not os.path.exists(self.checkpoint_dir):
-      os.system('mkdir -p \'%s\'' % self.checkpoint_dir)
+      os.system('mkdir -p %s' % self.checkpoint_dir)
 
   def get_checkpoint(self):
     if self.checkpoint_dir is None:
       return None
-
-    if self.test_id == '':
-      cp_pattern = self.checkpoint_dir
-    else:
-      cp_pattern = os.path.join(self.checkpoint_dir, "*")
+    
+     
+    cp_pattern = self.checkpoint_dir + '/*'
     cp_files = glob.glob(cp_pattern)
-
     if not cp_files:
-      util.log_info('Not checkpoint files found in %s' % cp_pattern)
       return None
 
     checkpoint_file = sorted(cp_files, key=os.path.getmtime)[-1]
     util.log('Loading from checkpoint file: %s', checkpoint_file)
-
-    try:
-      #return shelve.open(checkpoint_file, flag='r', protocol=-1, writeback=False)
-      return shelve.open(checkpoint_file, flag='r', protocol=-1,
-                         writeback=False)
-    except:
-      dict = {}
-      with zipfile.ZipFile(checkpoint_file) as zf:
-        for k in zf.namelist():
-          dict[k] = cPickle.loads(zf.read(k))
-      return dict
+    return cPickle.load(open(checkpoint_file))
 
   def dump(self, checkpoint, suffix=0):
     if self.checkpoint_dir is None:
       return
-
+    
     cp_pattern = os.path.join(self.checkpoint_dir, '*')
     cp_files = [(f, os.stat(f)) for f in glob.glob(cp_pattern)]
     cp_files = list(reversed(sorted(cp_files, key=lambda f: f[1].st_mtime)))
 
-    while sum([f[1].st_size for f in cp_files]) > self.max_cp_size:
-      os.remove(cp_files.pop()[0])
+    #while sum([f[1].st_size for f in cp_files]) > self.max_cp_size:
+    #  os.remove(cp_files.pop())
 
     checkpoint_filename = "%d" % suffix
     checkpoint_filename = os.path.join(self.checkpoint_dir, checkpoint_filename)
+    os.system('mkdir -p %s' % self.checkpoint_dir)
 
     util.log('Writing checkpoint to %s', checkpoint_filename)
-    sf = shelve.open(checkpoint_filename, flag='c', protocol=-1,
-                     writeback=False)
-    for k, v in checkpoint.iteritems():
-      sf[k] = v
-    sf.sync()
-    sf.close()
-
+    with open(checkpoint_filename, 'w') as cp:
+      cPickle.dump(checkpoint, cp, -1)
     util.log('save file finished')
 

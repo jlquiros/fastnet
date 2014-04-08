@@ -1,5 +1,5 @@
+import Image
 import cPickle
-import logging
 import os
 import sys
 import threading
@@ -7,21 +7,67 @@ import time
 import traceback
 import numpy as np
 
-def findCaller(obj):
-  f = sys._getframe(5)
-  co = f.f_code
-  filename = os.path.normcase(co.co_filename)
-  return co.co_filename, f.f_lineno, co.co_name
+DEBUG = 0
+INFO = 1
+WARN = 2
+ERROR = 3
+FATAL = 4
 
-log = logging.info
-log_debug = logging.debug
-log_info = logging.info
-log_warn = logging.warn
-log_error = logging.error
-log_fatal = logging.fatal
+log_level = INFO
+level_to_char = { DEBUG : 'D',
+                  INFO : 'I',
+                  WARN : 'W',
+                  ERROR : 'E',
+                  FATAL : 'F',
+                  }
 
+program_start = time.time()
+log_mutex = threading.Lock()
+def log(msg, *args, **kw):
+  level = kw.get('level', INFO)
+  if level < log_level:
+    return
 
-class Timer:
+  with log_mutex:
+    caller = sys._getframe(kw.get('caller_frame', 1))
+    filename = caller.f_code.co_filename
+    lineno = caller.f_lineno
+    now = time.time() - program_start
+    if 'exc_info' in kw:
+      exc = ''.join(traceback.format_exc())
+    else:
+      exc = None
+    print >> sys.stderr, '%s %.3f:%s:%d: %s' % (level_to_char[level], now, os.path.basename(filename), lineno, msg % args)
+    if exc:
+      print >> sys.stderr, exc
+
+def log_debug(msg, *args, **kw): log(msg, *args, level=DEBUG, caller_frame=2)
+def log_info(msg, *args, **kw): log(msg, *args, level=INFO, caller_frame=2)
+def log_warn(msg, *args, **kw): log(msg, *args, level=WARN, caller_frame=2)
+def log_error(msg, *args, **kw): log(msg, *args, level=ERROR, caller_frame=2)
+def log_fatal(msg, *args, **kw): log(msg, *args, level=FATAL, caller_frame=2)
+
+def resize_and_crop(img, width, height):
+  '''Resize and crop an image to fit a network.'''
+  if img.mode != 'RGB':
+    img = img.convert('RGB')
+
+  if img.size == (width, height):
+    return img
+
+  # take out a square section from the center
+  h, w = img.size
+  mindim = min(w, h)
+  cx, cy = w / 2, h / 2
+
+  img = img.crop((cy - mindim / 2, cx - mindim / 2,
+                  cy + mindim / 2, cx + mindim / 2))
+
+  img = img.resize((width, height), Image.BICUBIC)
+  assert img.size == (width, height), img.size
+  return img
+
+class Timer(object):
   def __init__(self):
     self.func_time = {}
     self.last_time = 0.0
@@ -47,10 +93,10 @@ class EZTimer(object):
   def __init__(self, msg=''):
     self.msg = msg
     self.start = time.time()
-    
+
   def __del__(self):
-    log('Operation %s finished in %.5f seconds', self.msg, time.time() - self.start) 
-    
+    log('Operation %s finished in %.5f seconds', self.msg, time.time() - self.start)
+
 
 def divup(x, base):
   if x / base * base == x:
@@ -125,7 +171,7 @@ def abs_mean(x):
     return (gpuarray.sum(x.__abs__()) / x.size).get().item()
   if isinstance(x, np.ndarray):
     return np.mean(np.abs(x))
-  
+
 
 class Assert(object):
   @staticmethod
@@ -133,43 +179,43 @@ class Assert(object):
     import numpy
     if hasattr(a, 'shape') and hasattr(b, 'shape'):
       assert a.shape == b.shape, 'Mismatched shapes: %s %s' % (a.shape, b.shape)
-      
+
     assert numpy.all(a == b), 'Failed: \n%s\n ==\n%s' % (a, b)
-  
+
   @staticmethod
   def eq(a, b): assert (a == b), 'Failed: %s == %s' % (a, b)
-  
+
   @staticmethod
   def ne(a, b): assert (a == b), 'Failed: %s != %s' % (a, b)
-  
+
   @staticmethod
   def gt(a, b): assert (a > b), 'Failed: %s > %s' % (a, b)
-  
+
   @staticmethod
   def lt(a, b): assert (a < b), 'Failed: %s < %s' % (a, b)
-  
+
   @staticmethod
   def ge(a, b): assert (a >= b), 'Failed: %s >= %s' % (a, b)
-  
+
   @staticmethod
   def le(a, b): assert (a <= b), 'Failed: %s <= %s' % (a, b)
-  
+
   @staticmethod
   def true(expr): assert expr, 'Failed: %s == True' % (expr)
-  
+
   @staticmethod
-  def isinstance(expr, klass): 
+  def isinstance(expr, klass):
     assert isinstance(expr, klass), 'Failed: isinstance(%s, %s) [type = %s]' % (expr, klass, type(expr))
-  
+
   @staticmethod
   def no_duplicates(collection):
     d = collections.defaultdict(int)
     for item in collection:
       d[item] += 1
-    
+
     bad = [(k,v) for k, v in d.iteritems() if v > 1]
     assert len(bad) == 0, 'Duplicates found: %s' % bad
-  
+
 
 def lazyinit(initializer_fn):
   '''
@@ -181,7 +227,7 @@ def lazyinit(initializer_fn):
       return fn(*args, **kw)
     _fn.__name__ = fn.__name__
     return _fn
-  
+
   return wrap
 
 def timed_fn(fn):
@@ -190,10 +236,10 @@ def timed_fn(fn):
   '''
   def _fn(*args, **kw):
     timer.start()
-    result = fn(*args, **kw) 
+    result = fn(*args, **kw)
     timer.end(fn.__name__)
-    
+
     return result
-    
+
   _fn.__name__ = fn.__name__
   return _fn

@@ -1,11 +1,11 @@
-from fastnet import util, layer
-from fastnet.layer import TRAIN, WeightedLayer, TEST
-from fastnet.util import timer
-from pycuda import cumath, gpuarray, driver
-from pycuda.gpuarray import GPUArray
 import numpy as np
-import sys
 import time
+
+from pycuda import gpuarray, driver
+
+from . import util
+from fastnet.layer import TRAIN, WeightedLayer, TEST
+
 
 def to_gpu(array):
   assert array.dtype == np.float32
@@ -14,13 +14,10 @@ def to_gpu(array):
 
 class FastNet(object):
   def __init__(self, image_shape):
-    self.batch_size = -1
     self.layers = []
     self.image_shape = image_shape
+    self.counts = None
 
-    self.numCase = self.cost = self.correct = 0.0
-    self.numConv = 0
-  
   def __getitem__(self, name):
     for layer in self.layers:
       if layer.name == name:
@@ -34,63 +31,25 @@ class FastNet(object):
       layer.attach(self.layers[-1])
 
     self.layers.append(layer)
-    util.log_info('Append: %s  [%s] : %s', layer.name, layer.type, layer.get_output_shape())
+    util.log_info('Append: %s  [%s] : %s',
+                  layer.name,
+                  layer.type,
+                  layer.get_output_shape())
     return layer
-
-  def drop_layer_from(self, name):
-    idx = self.get_output_index_by_name(name)
-    return_layers = self.layers[idx:]
-    self.layers = self.layers[0:idx]
-    print 'delete layer from', name
-    print 'the last layer would be', self.layers[-1].name
-    return return_layers
-
-  @staticmethod
-  def split_conv_to_stack(conv_params):
-    stack = {}
-    s = []
-    for ld in conv_params:
-      if ld['type'] in ['fc', 'softmax']:
-        break
-      elif ld['type'] == 'conv':
-        if s != []:
-          stack[s[0]['name']] = s
-        s = [ld]
-      else:
-        s.append(ld)
-    stack[s[0]['name']] = s
-    return stack
-
-  @staticmethod
-  def split_fc_to_stack(fc_params):
-    stack = {}
-    s = []
-    for ld in fc_params:
-      if ld['type'] == 'softmax':
-        break
-      elif ld['type'] == 'fc':
-        if s != []:
-          stack[s[0]['name']] = s
-        s = [ld]
-      else:
-        s.append(ld)
-    stack[s[0]['name']] = s
-    return stack
 
   def fprop(self, data, train=TRAIN):
     assert data.dtype == np.float32
     data = to_gpu(data)
-    self.prepare_for_train(data)
     assert len(self.layers) > 0, 'No outputs: uninitialized network!'
 
     input = data
     for layer in self.layers:
-      #util.log_info('Fprop: %s', layer.name)
+      # util.log_info('Fprop: %s', layer.name)
       st = time.time()
-      layer.fprop(input, layer.output, train)
+      output = layer.fprop(input, train)
       driver.Context.synchronize()
       ed = time.time()
-      #print 'fprop', layer.name, ed - st
+      # print 'fprop', layer.name, ed - st
 
       input = layer.output
     
@@ -98,20 +57,26 @@ class FastNet(object):
 
   def bprop(self, label, train=TRAIN):
     grad = label
-    for i in range(1, len(self.layers) + 1):
+    for i in range(1, len(self.layers)):
       curr = self.layers[-i]
-      if curr.disable_bprop: return
+      if not curr.should_bprop: return
       prev = self.layers[-(i + 1)]     
       st = time.time()
       curr.bprop(grad, prev.output, curr.output, prev.output_grad)
       driver.Context.synchronize()
       ed = time.time()
-      #print 'bprop', curr.name, ed - st
+      # print 'bprop', curr.name, ed - st
       grad = prev.output_grad
 
   def update(self):
     for layer in self.layers:
       layer.update()
+  
+  def check_weights(self):
+    for layer in self.layers:
+      if isinstance(layer, WeightedLayer):
+        assert not np.any(np.isnan(layer.weight.wt.get()))
+        assert not np.any(np.isnan(layer.bias.wt.get()))
 
   def adjust_learning_rate(self, factor=1.0):
     util.log_info('Adjusting learning rate: %s', factor)
@@ -126,16 +91,17 @@ class FastNet(object):
     for layer in self.layers:
       if isinstance(layer, WeightedLayer):
         layer.weight.epsilon = eps_w
-        layer.bias.epsilon = eps_w
-    
+        layer.bias.epsilon = eps_b
     self.print_learning_rates()
 
   def print_learning_rates(self):
-    util.log_info('Learning rates:')
+    util.log('Learning rates:')
     for layer in self.layers:
       if isinstance(layer, WeightedLayer):
-        util.log_info('%s: %s %s %s', layer.name, layer.__class__.__name__, 
+        util.log('%s: %s %s %s', layer.name, layer.__class__.__name__,
                  layer.weight.epsilon, layer.bias.epsilon)
+      else:
+        util.log('%s: %s', layer.name, layer.__class__.__name__)
 
   def clear_weight_incr(self):
     for l in self.layers:
@@ -145,8 +111,9 @@ class FastNet(object):
   def get_cost(self, label, prediction):
     cost_layer = self.layers[-1]
     assert not np.any(np.isnan(prediction.get()))
-    cost_layer.logreg_cost(label, prediction)
-    return cost_layer.cost, cost_layer.batchCorrect
+    cost = cost_layer.logreg_cost(label, prediction)
+    batch_correct = cost_layer.get_correct()
+    return cost, batch_correct
 
   def get_cost_multiview(self, label, prediction, num_view):
     cost_layer = self.layers[-1]
@@ -155,47 +122,17 @@ class FastNet(object):
     return cost_layer.cost.get().sum(), cost_layer.batchCorrect
 
   def get_batch_information(self):
-    cost = self.cost
-    numCase = self.numCase
-    correct = self.correct
-    self.cost = self.numCase = self.correct = 0.0
-    return cost / numCase , correct / numCase, int(numCase)
+    return self.cost, self.correct
   
-  def get_batch_information_multiview(self, num_view):
-    cost = self.cost
-    numCase = self.numCase / num_view
-    correct = self.correct
-    self.cost = self.numCase = self.correct = 0.0
-    return cost / numCase, correct / numCase, int(numCase)
-
-
   def get_correct(self):
     return self.layers[-1].get_correct()
 
-  def prepare_for_train(self, data):
-    assert len(data.shape) == 2, 'Data shape must be (imagedata, #images)'
-    timer.start()
-
-    # If data size doesn't match our expected batch_size, reshape outputs.
-    if data.shape[1] != self.batch_size:
-      #util.log_info('Setting batch size %s', data.shape[1])
-      self.batch_size = data.shape[1]
-      for layer in self.layers:
-        layer.change_batch_size(self.batch_size)
-        layer.init_output()
-
-    self.numCase += data.shape[1]
-
-  def train_batch(self, data, label, train=TRAIN, ):
-    #util.log_info('%s %s', data.shape, label.shape)
+  def train_batch(self, data, label, train=TRAIN,):
     data = to_gpu(data)
     label = to_gpu(label)
 
-    label = label.reshape((label.size, 1))
     prediction = self.fprop(data, train)
-    cost, correct = self.get_cost(label, prediction)
-    self.cost += cost
-    self.correct += correct
+    self.cost, self.correct = self.get_cost(label, prediction)
 
     if train == TRAIN:
       self.bprop(label)
@@ -219,14 +156,6 @@ class FastNet(object):
 
   def get_dumped_layers(self):
     return [l.dump() for l in self.layers]
-
-  def disable_bprop(self):
-    for l in self.layers:
-      l.disable_bprop()
-
-  def enable_bprop(self):
-    for l in self.layers:
-      l.enable_bprop()
 
   def get_report(self):
     pass
